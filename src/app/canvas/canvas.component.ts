@@ -1,6 +1,6 @@
 import { Component, ElementRef, OnInit, ViewChild } from '@angular/core';
 import { Ball } from 'src/_objects/Ball';
-import { Vector2 } from 'src/_objects/Vector2';
+import vector2, { Vector2 } from 'src/_objects/Vector2';
 import { Config, BallTypes } from 'src/_objects/Config';
 
 
@@ -8,6 +8,9 @@ import { Observable, fromEvent } from 'rxjs';
 import { skipUntil, takeUntil } from 'rxjs/operators';
 import { Renderer2 } from '@angular/core';
 import { RESTORED_VIEW_CONTEXT_NAME } from '@angular/compiler/src/render3/view/util';
+import { Entity } from 'src/_objects/Entity';
+import { Wall, WallSegment } from 'src/_objects/Wall';
+import { Collision } from 'src/_types/basic';
 
 @Component({
   selector: 'app-canvas',
@@ -18,7 +21,7 @@ export class CanvasComponent implements OnInit {
   @ViewChild('canvas', { static: true }) canvas!: ElementRef<HTMLCanvasElement>;
 
   ctx!: CanvasRenderingContext2D;
-  entities: Array<Ball> = [];
+  entities: Array<Entity> = [];
   config = Config;
   stop = false;
   time = {
@@ -78,7 +81,7 @@ export class CanvasComponent implements OnInit {
     //   prevStartPos = prevStartPos.add(offSet);
     // }
     this.cueBall = new Ball(this, {
-      position: new Vector2(60, Config.canvasHeight / 2),
+      position: vector2.from(Config.canvasWidth / 2, Config.canvasHeight / 2),
       color: 'white',
       type: 'cue',
       number: 0
@@ -87,7 +90,7 @@ export class CanvasComponent implements OnInit {
     this.entities.push(this.cueBall);
 
     this.entities.push(new Ball(this, {
-      position: new Vector2(Config.canvasWidth - 60, Config.canvasHeight / 2),
+      position: vector2.from(Config.canvasWidth - 60, Config.canvasHeight / 2),
       color: BallTypes[11].color,
       type: BallTypes[11].type,
       number: BallTypes[11].number
@@ -95,25 +98,48 @@ export class CanvasComponent implements OnInit {
 
 
     this.entities.push(new Ball(this, {
-      position: new Vector2(85, Config.canvasHeight - 30),
+      position: vector2.from(85, Config.canvasHeight - 30),
       color: BallTypes[2].color,
       type: BallTypes[2].type,
       number: BallTypes[2].number
     }))
 
     this.entities.push(new Ball(this, {
-      position: new Vector2(250, 40),
+      position: vector2.from(250, 40),
       color: BallTypes[5].color,
       type: BallTypes[5].type,
       number: BallTypes[5].number
     }))
 
     this.entities.push(new Ball(this, {
-      position: new Vector2(Config.canvasWidth - 400, Config.canvasHeight / 2 - 40),
+      position: vector2.from(Config.canvasWidth - 400, Config.canvasHeight / 2 - 40),
       color: BallTypes[5].color,
       type: BallTypes[5].type,
       number: BallTypes[5].number
     }))
+
+    let offsetX = 10;
+    let offsetY = 10;
+
+    this.entities.push(new Wall(this, {
+      segments: [{
+            end: new Vector2(offsetX, offsetY),
+            start: new Vector2(Config.canvasWidth - offsetX, offsetY)
+        }, {
+            end: new Vector2(Config.canvasWidth - offsetX, offsetY),
+            start: new Vector2(Config.canvasWidth - offsetX, Config.canvasHeight - offsetY)
+        }, {
+            end: new Vector2(Config.canvasWidth - offsetX, Config.canvasHeight - offsetY),
+            start: new Vector2(offsetX, Config.canvasHeight - offsetY)
+        }, {
+            end: new Vector2(offsetX, Config.canvasHeight - offsetY),
+            start: new Vector2(offsetX, offsetY)
+        }],
+        firmness: 80
+    }))
+
+    console.log(this.entities);
+    
 
     this.mousedown$ = fromEvent(this.ctx.canvas, 'mousedown');
     this.mouseup$ = fromEvent(this.ctx.canvas, 'mouseup');
@@ -147,8 +173,8 @@ export class CanvasComponent implements OnInit {
 
   addBall(): void {
     this.entities.push(new Ball(this, {
-      position: new Vector2(30, Config.canvasHeight / 2),
-      velocity: new Vector2(1000, 500),
+      position: vector2.from(30, Config.canvasHeight / 2),
+      velocity: vector2.from(1000, 500),
       color: 'white',
       type: 'cue',
       number: 0
@@ -159,7 +185,7 @@ export class CanvasComponent implements OnInit {
     if (this.stop) return;
     this.time.now = new Date().getTime();
     for (let e of this.entities) {
-      e.update()
+      e.update?.call(e);
     }
     this.draw();
     if (this.time.last) this.time.deltaTime = this.time.now - this.time.last;
@@ -173,75 +199,124 @@ export class CanvasComponent implements OnInit {
       e.draw()
     }
 
-    let angle = this.cueBall.position.getAngle(new Vector2(this.mouseX, this.mouseY));
-    let tan1 = this.cueBall.position.getNewPos(angle - 90, Config.radius - 1)
-    let tan2 = this.cueBall.position.getNewPos(angle + 90, Config.radius - 1)
+    let oldPos = this.cueBall.position
+    let angle = oldPos.getAngle(new Vector2(this.mouseX, this.mouseY));
+    let newPos = oldPos.getNewPos(angle, 10000);
+    let bounces = 4;
+    let at = 1;
 
-    let newPos = this.cueBall.position.getNewPos(angle, 1000);
-    // let tanPos1 = tan1.getNewPos(angle, 1500)
-    // let tanPos2 = tan2.getNewPos(angle, 1500)
-    let collisions: Collision[] = [];
+    let imagineCollision = (oldPos: Vector2, newPos: Vector2) => {
+      let collisions: Collision[] = [];
 
-    for(let e of this.entities) {
-      if(e == this.cueBall) continue;
+      for(let e of this.entities) {
+        if(e == this.cueBall) continue;
+        switch(e.constructor.name) {
+          case 'Ball':
+            let ball = <Ball>e;
+            let ballpoint = oldPos.findLine(newPos, ball.position);
+            if( ballpoint && ball.position.distanceBetweenPoints(ballpoint) <= this.cueBall.radius + ball.radius) {
+              let distanceA = ball.position.distanceBetweenPoints(ballpoint);
+              let distanceC = this.cueBall.radius + ball.radius;
+              let distanceB = Math.sqrt(distanceC**2 - distanceA**2);
 
-      let point = this.cueBall.position.findLine(newPos, e.position);
+              let movementDir = newPos.subtract(oldPos).normalize();
+              let imaginaryCollisionPoint = ballpoint.subtract(movementDir.multiply(distanceB));
+              this.drawPoint(imaginaryCollisionPoint);
 
-      if(e.position.distanceBetweenPoints(point) <= Config.radius*2) collisions.push({
-        entity: e,
-        point
-      });
-    }
+              collisions.push({
+                entity: e,
+                point: imaginaryCollisionPoint
+              })
+            }
+            break;
+          case 'Wall':
+            let wall = <Wall>e;
+            let wallCollision = wall.getCollision([oldPos, newPos]);
+            for(let collision of wallCollision) {
+              let [wallpoint, segment] = collision;
+              
+              let movementDir = newPos.subtract(oldPos).normalize();
+              // let wallVector = segment.start.subtract(segment.end).normalize();
+              let wallVector = segment.end.subtract(segment.start).normalize();
+              let dot = wallVector.getDotProduct(movementDir);
+              let angleWithWall = Math.acos(dot);
+              
+              // Calculating the hypotenuse using sine law
+              let imaginaryCollisionDistance = this.cueBall.radius / Math.sin(angleWithWall);
 
-    if(collisions.length) {
-      if(collisions?.length > 1 ) {
-        collisions.sort((a, b) => {
-          let aD = this.cueBall.position.distanceBetweenPoints(a.point);
-          let bD = this.cueBall.position.distanceBetweenPoints(b.point);
-  
-          return aD > bD ? 1 : bD> aD ? -1 : 0;
-        })
-      } 
+              // Calculating new position by adding calculated length in direction of initial movement direction
+              let imaginaryCollisionPoint = wallpoint.subtract(movementDir.multiply(imaginaryCollisionDistance));
+              this.drawPoint(imaginaryCollisionPoint);
 
-      let firstCollision = collisions[0];
-
-      this.drawPoint(firstCollision.point)
-
-      let distA = firstCollision.entity.position.distanceBetweenPoints(firstCollision.point);
-      let distC = this.cueBall.radius + firstCollision.entity.radius;
-      let distB;
-      if(distA > 0) {
-        distB = Math.sqrt(distC**2 - distA**2)
-      } else {
-        distB = distC;
+              collisions.push({
+                entity: segment,
+                point: imaginaryCollisionPoint
+              });
+            }
+            break;
+        }
       }
-      
-      let dist = this.cueBall.position.distanceBetweenPoints(firstCollision.point);
 
-      let collisionDistance = dist - distB;
-      let collisionPoint = this.cueBall.position.getNewPos(angle, collisionDistance);
-      this.drawCircle(collisionPoint, this.cueBall.radius);
-      this.drawPoint(collisionPoint)
+      if(collisions.length) {
+        if(collisions?.length > 1 ) {
+          collisions.sort((a, b) => {
+            let aD = oldPos.distanceBetweenPoints(a.point);
+            let bD = oldPos.distanceBetweenPoints(b.point);
+    
+            return aD - bD;
+          })
+        }
 
-      let cDx = collisionPoint.x - firstCollision.entity.position.x;
-      let cDy = collisionPoint.y - firstCollision.entity.position.y;
-      let dsq = cDx*cDx + cDy * cDy;
-      let vel = collisionPoint.getNewPos(angle, 5);
-      let DV = 2*(vel.x*cDx + vel.y*cDy)/ dsq;
-      // if(DV>0)DV=0;
-      let newVel = new Vector2(vel.x - DV * cDx, vel.y - DV * cDy);
+        let firstCollision = collisions[0];
+        
+        this.drawLine(oldPos, firstCollision.point);
+        this.drawPoint(firstCollision.point);
+        this.drawCircle(firstCollision.point, this.cueBall.radius);
 
-      this.drawLine(collisionPoint, collisionPoint.add(newVel))
+        switch(firstCollision.entity.constructor.name) {
+          case 'Ball':
+            let ball = <Ball>firstCollision.entity;
+            
+            let V1 = firstCollision.point.subtract(oldPos);  // velocity vector of cueBall before collision
+
+            // calculate unit normal and unit tangent directions
+            let n = ball.position.subtract(firstCollision.point);
+            let un = n.normalize(); 
+
+            // project velocities onto unit normal and unit tangent directions
+            let v1n = un.getDotProduct(V1); 
+            let v1VisualizeBeforeZeroOut = un.multiply(v1n).multiply(-1);
+            
+            this.drawLine(ball.position, ball.position.add(v1VisualizeBeforeZeroOut.negate()));
+            let newBV = V1.reflectNormal(v1VisualizeBeforeZeroOut.normalize()).normalize();
+
+            // this.drawLine(firstCollision.point, );
+            let newBallPoint = firstCollision.point.add(newBV.multiply(10000));
+            if(at < bounces) {
+              at = bounces;
+              imagineCollision(firstCollision.point, newBallPoint)
+            }
+            break;
+          case 'WallSegment':
+            let wall = <WallSegment>firstCollision.entity;
+
+            let V = firstCollision.point.subtract(oldPos)
+            let newV = V.reflectNormal(wall.normal).normalize();
+
+            let newPoint = firstCollision.point.add(newV.multiply(10000))
+            
+            // this.drawLine(firstCollision.point, firstCollision.point.add(newV))
+            if(at < bounces) {
+              at++;
+              imagineCollision(firstCollision.point, newPoint)
+            }
+            break;
+        }
+        // let 
+      }
     }
 
-
-
-
-    // let point = this.cueBall.position.findLine(newPos, this.entities[1].position);
-    // this.drawPoint(point);
-    this.drawLine(this.cueBall.position, newPos);
-    // this.drawLine(tan1, tanPos1)
-    // this.drawLine(tan2, tanPos2)
+    imagineCollision(oldPos, newPos);
   }
 
   drawLine(v1: Vector2, v2: Vector2) {
@@ -270,12 +345,9 @@ export class CanvasComponent implements OnInit {
         
         this.ctx.arc(point.x, point.y, radius, 0, 2 * Math.PI);
         this.ctx.closePath();
-
+        // this.ctx.fill();
         this.ctx.stroke();
   }
 }
 
-interface Collision {
-  entity: Ball;
-  point: Vector2;
-}
+

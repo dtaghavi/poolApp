@@ -2,8 +2,9 @@ import { CanvasComponent } from "src/app/canvas/canvas.component";
 import { Vector2 } from "./Vector2";
 import { Config } from 'src/_objects/Config';
 import { BallType } from "src/_types/basic";
+import { Entity } from "./Entity";
 
-export class Ball {
+export class Ball extends Entity{
     radius = Config.radius;
     position: Vector2;
     velocity = new Vector2(0, 0);
@@ -12,6 +13,7 @@ export class Ball {
     type!: BallType;
 
     constructor(private canvas: CanvasComponent, options: BallOptions, ) {
+        super();
         this.position = options.position;
         if(options.velocity) this.velocity = options.velocity;
         this.color = options.color;
@@ -35,20 +37,21 @@ export class Ball {
 
 
     draw() {
-        this.canvas.ctx.beginPath();
-        this.canvas.ctx.strokeStyle = this.color;
-        this.canvas.ctx.fillStyle = this.color;
-        this.canvas.ctx.arc(this.position.x, this.position.y, Config.radius, 0, 2 * Math.PI);
-        this.canvas.ctx.closePath();
-        this.canvas.ctx.textAlign = 'center';
+        let ctx = this.canvas.ctx;
+        ctx.beginPath();
+        ctx.strokeStyle = this.color;
+        ctx.fillStyle = this.color;
+        ctx.arc(this.position.x, this.position.y, Config.radius, 0, 2 * Math.PI);
+        ctx.closePath();
+        ctx.textAlign = 'center';
         if(this.type == 'solid') {
-            this.canvas.ctx.fill();
-            this.canvas.ctx.fillStyle = 'black';
-            this.canvas.ctx.fillText(this.number.toString(), this.position.x, this.position.y + 4);
+            ctx.fill();
+            ctx.fillStyle = 'black';
+            ctx.fillText(this.number.toString(), this.position.x, this.position.y + 4);
         } else {
-            this.canvas.ctx.fill();
-            this.canvas.ctx.fillStyle = 'black';
-            this.canvas.ctx.fillText(this.number.toString(), this.position.x, this.position.y + 4);
+            ctx.fill();
+            ctx.fillStyle = 'black';
+            ctx.fillText(this.number.toString(), this.position.x, this.position.y + 4);
         }
     }
 }
